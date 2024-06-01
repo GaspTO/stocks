@@ -17,14 +17,16 @@ class Stock:
         statements should only rely on these and not any extra one.
     """
 
-    ## MAIN COLUMNS
-    INCOME_COLUMNS = ['fiscalDateEnding', 'reportedCurrency',
+    ## Main Columns
+    ### These are the columns we can expect the returned dataframes to have
+    #TODO maybe add fillingdate 
+    INCOME_COLUMNS = ['fiscalDateEnding', 'reportedCurrency', "fillingDate",
                         'revenue', 'costOfRevenue', 'grossMargin', 'operatingExpenses',
                         'operatingIncome', 'incomeBeforeTax', 'netIncome',
                         'eps', 'epsdiluted',
                         'weightedAverageSharesOut', 'weightedAverageSharesOutDil']
 
-    BALANCE_COLUMNS = ['fiscalDateEnding', 'reportedCurrency',
+    BALANCE_COLUMNS = ['fiscalDateEnding', 'reportedCurrency', "fillingDate",
                         'cashAndCashEquivalents', 'shortTermInvestments', 'accountsReceivables', 'inventory', 'totalCurrentAssets',
                         'propertyPlantEquipmentNet', 'longTermInvestments', 'goodwill', 'intangibleAssets', 'otherNonCurrentAssets', 'totalNonCurrentAssets', 
                         'totalAssets',
@@ -33,7 +35,7 @@ class Stock:
                         'preferredStock', 'commonStock', 'retainedEarnings',
                         'totalEquity', 'nonControllingInterest', 'totalStockholdersEquity', 'totalLiabilitiesAndTotalEquity']
         
-    CASH_COLUMNS = ['fiscalDateEnding', 'reportedCurrency',
+    CASH_COLUMNS = ['fiscalDateEnding', 'reportedCurrency', "fillingDate",
                     'cashAtBeginningOfPeriod', 'netIncome',
                     'netCashProvidedByOperatingActivities',
                     'netCashUsedForInvestingActivities',
@@ -77,7 +79,7 @@ class Stock:
         raise NotImplementedError
 
 
-    def market_cap(self, max_years=5):
+    def market_cap(self, start_date=None, end_date=None):
         """ Market cap over time """
         raise NotImplementedError
         

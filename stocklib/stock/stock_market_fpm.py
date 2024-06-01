@@ -1,10 +1,12 @@
 import requests
 import pandas as pd
 import os
+from .stock_fpm import StockFPM
+from .stock_evaluator import StockEvaluator
+from datetime import datetime
 
-
-class StockMarket_FPM:
-    def __init__(self, apikey="Sek7iGkE1GvNjfD4mxMrAIdJCu8tpeIh", dir_path="stock_data", forbid_fetch=False):
+class StockMarketFPM:
+    def __init__(self, apikey="Sek7iGkE1GvNjfD4mxMrAIdJCu8tpeIh", dir_path="stock_data", forbid_fetch=False, exchange=None):
         self.apikey = apikey
         self.dir_path = dir_path
         self.base_url = f'https://financialmodelingprep.com/api/v3/'
@@ -37,9 +39,8 @@ class StockMarket_FPM:
 
     def save(self):
         # Create the directory for the symbol if it doesn't exist
-       
         if not os.path.exists(self.dir_path):
-            os.makedirs(self.dir_path)
+            os.makedirs(self .dir_path)
 
         # Stock list 
         file_path = os.path.join(self.dir_path, "stock_listing.csv")
@@ -52,10 +53,36 @@ class StockMarket_FPM:
             self._stock_list = pd.read_csv(file_path)
             return True
         return False
+    
+
+    def evaluate_companies(self, stock_evaluator:StockEvaluator, output_name=None):
+           
+        if output_name is None:
+            today_date = datetime.now().strftime("%Y-%m-%d")
+            output_name = f"{str(stock_evaluator)}_{today_date}.csv"
+        
+        companies = self.stock_list()
+        # Initialize an empty DataFrame for appending data
+        company_evaluations = pd.DataFrame()
+        for i in range(len(companies)):
+            symbol, name, exchange = companies.iloc[i][["symbol","name","exchange"]]
+            stock = StockFPM(symbol)
+            score, info = stock_evaluator.evaluate(stock)
+            
+            entry = {
+                'symbol': symbol,
+                'name': name,
+                'exchange': exchange,
+                'score': score,
+                **info
+            }
+
+            # Append the entry to the DataFrame
+            company_evaluations = company_evaluations.append(entry, ignore_index=True)
+
+        # Save the DataFrame to a CSV file
+        company_evaluations.to_csv(output_name, index=False)
+         
+        return company_evaluations
 
 
-if __name__ == "__main__":
-    market = StockMarket_FPM()
-    lista = market.stock_list()
-    market.save()
-    print("hey")

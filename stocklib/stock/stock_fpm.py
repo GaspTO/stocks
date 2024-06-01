@@ -2,8 +2,10 @@ from .stock_api import Stock
 import pandas as pd
 import requests
 import os
-import datetime
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
+
+#! TODO check that everything is in dollars
 
 class StockFPM(Stock):
     """
@@ -25,9 +27,14 @@ class StockFPM(Stock):
             url += f"&{key}={kwargs[key]}"
 
         response = requests.get(url)
+
         if response.status_code == 429:
             raise ValueError("Limit API has been achieved")
+        
         data = pd.DataFrame(response.json())
+
+        if len(data) == 0:
+            raise ValueError("Empty Data")
 
         return data
     
@@ -49,14 +56,16 @@ class StockFPM(Stock):
              'eps', 'epsdiluted', 'weightedAverageShsOut','weightedAverageShsOutDil']
             
             self._income_statement = self._income_statement[columns_order]                 
-            self._income_statement = self._income_statement.drop(["symbol","cik","fillingDate","acceptedDate", "calendarYear","period","link","finalLink" ],axis=1)
+            self._income_statement = self._income_statement.drop(["symbol","cik","acceptedDate", "calendarYear","period","link","finalLink" ],axis=1)
             self._income_statement = self._income_statement.rename(columns={"date": "fiscalDateEnding", "grossProfit": "grossMargin",
                                                                             "weightedAverageShsOut": "weightedAverageSharesOut",
                                                                             "weightedAverageShsOutDil": "weightedAverageSharesOutDil"})
-            for field in self._income_statement.keys()[2:]:
+            for field in self._income_statement.keys()[3:]:
                 self._income_statement[field]  = pd.to_numeric(self._income_statement[field], errors='coerce')
             self._income_statement['fiscalDateEnding'] = pd.to_datetime(self._income_statement['fiscalDateEnding'], errors='coerce')
-            
+            self._income_statement['fillingDate'] = pd.to_datetime(self._income_statement['fillingDate'], errors='coerce')
+
+        #todo order by date
         if dense:
             return self._income_statement[self.INCOME_COLUMNS]
         else:
@@ -82,13 +91,14 @@ class StockFPM(Stock):
                 'totalInvestments', 'totalDebt', 'netDebt']
 
             self._balance_sheet = self._balance_sheet[columns_order]
-            self._balance_sheet = self._balance_sheet.drop(["symbol","cik","fillingDate","acceptedDate", "calendarYear","period","link","finalLink"],axis=1)
+            self._balance_sheet = self._balance_sheet.drop(["symbol","cik","acceptedDate", "calendarYear","period","link","finalLink"],axis=1)
             self._balance_sheet = self._balance_sheet.rename(columns={"date":"fiscalDateEnding",
                                                                       "netReceivables": "accountsReceivables",
                                                                       "minorityInterest":"nonControllingInterest"})
-            for field in self._balance_sheet.keys()[2:]:
+            for field in self._balance_sheet.keys()[3:]:
                 self._balance_sheet[field]  = pd.to_numeric(self._balance_sheet[field], errors='coerce')
             self._balance_sheet['fiscalDateEnding'] = pd.to_datetime(self._balance_sheet['fiscalDateEnding'], errors='coerce')
+            self._balance_sheet['fillingDate'] = pd.to_datetime(self._balance_sheet['fillingDate'], errors='coerce')
                         
         if dense:
             return self._balance_sheet[self.BALANCE_COLUMNS]
@@ -100,9 +110,9 @@ class StockFPM(Stock):
         """ Cash flow statements """
         if self._cash_flow is None:
             self._cash_flow = self.fetch("cash-flow-statement", period="annual")
-
+            
             # Format Data
-            columns_order = ['date', 'symbol', 'reportedCurrency', 'cik', 'fillingDate','acceptedDate', 'calendarYear', 'period', 'link', 'finalLink',
+            columns_order = ['date', 'symbol', 'reportedCurrency', 'cik', 'fillingDate', 'acceptedDate', 'calendarYear', 'period', 'link', 'finalLink',
                             'cashAtBeginningOfPeriod', 'netIncome',
                             'depreciationAndAmortization', 'stockBasedCompensation', 'deferredIncomeTax', 'accountsReceivables', 
                                 'inventory', 'accountsPayables', 'otherWorkingCapital', 'otherNonCashItems', 'netCashProvidedByOperatingActivities',
@@ -113,15 +123,16 @@ class StockFPM(Stock):
                             'operatingCashFlow', 'capitalExpenditure', 'freeCashFlow']
 
             self._cash_flow = self._cash_flow[columns_order]
-            self._cash_flow = self._cash_flow.drop(["symbol","cik","fillingDate","acceptedDate", "calendarYear","period","link","finalLink"],axis=1)
+            self._cash_flow = self._cash_flow.drop(["symbol","cik","acceptedDate", "calendarYear","period","link","finalLink"],axis=1)
             self._cash_flow = self._cash_flow.rename(columns={"date":"fiscalDateEnding",
                                                             "otherInvestingActivites":"otherInvestingActivities",
                                                             "netCashUsedForInvestingActivites":"netCashUsedForInvestingActivities",
                                                             "otherFinancingActivites":"otherFinancingActivities",
                                                             "netCashUsedProvidedByFinancingActivites":"netCashUsedProvidedByFinancingActivities"})
-            for field in self._cash_flow.keys()[2:]:
+            for field in self._cash_flow.keys()[3:]:
                 self._cash_flow[field]  = pd.to_numeric(self._cash_flow[field], errors='coerce')
             self._cash_flow['fiscalDateEnding'] = pd.to_datetime(self._cash_flow['fiscalDateEnding'], errors='coerce')
+            self._cash_flow['fillingDate'] = pd.to_datetime(self._cash_flow['fillingDate'], errors='coerce')
 
         if dense:
             return self._cash_flow[self.CASH_COLUMNS]
@@ -129,25 +140,46 @@ class StockFPM(Stock):
             return self._cash_flow
 
 
-    def market_cap(self, max_years=15):
+    def market_cap(self, start_date=None, end_date=None):
         """ Market cap over time """
+        def ensure_datetime(date):
+            if isinstance(date, str):
+                return datetime.strptime(start_date, "%Y-%m-%d").date()
+            return date
+
+        # Convert start_date and end_date
+        if end_date is None:
+            end_date = datetime.today().date()
+        else:
+            end_date = ensure_datetime(end_date)
+
+        if start_date is None:
+            start_date = end_date - relativedelta(years=5)
+        else:
+            start_date = ensure_datetime(start_date)
+
+        assert end_date > start_date
+
         if self._market_cap is None:
-            first_day_of_this_month = datetime.date.today().replace(day=1)
-            last_day_of_month = first_day_of_this_month
             market_cap = []
-            for half_decade in range(0,max_years,5):
-                until = last_day_of_month.strftime("%Y-%m-%d")
-                last_day_of_month = last_day_of_month - relativedelta(years=5) + datetime.timedelta(days=1)
-                since = last_day_of_month.strftime("%Y-%m-%d")
-                params = {"from":since, "to":until}
+            current = end_date
+            while start_date <= current:
+                until = current 
+                since = current - relativedelta(years=5) - relativedelta(days=1)
+                params = {"from":since.strftime("%Y-%m-%d"), "to":until.strftime("%Y-%m-%d") }
                 mc = self.fetch("historical-market-capitalization", **params)
                 if len(mc) == 0:
                     break
                 market_cap.append(mc)
-                last_day_of_month = last_day_of_month  + datetime.timedelta(days=1)
-            self._market_cap = pd.concat(market_cap)
-            self._market_cap["date"] = pd.to_datetime(self._market_cap ["date"])
-            self._market_cap = self._market_cap[["symbol","date","marketCap"]]
+                current = current - relativedelta(years=5)
+            
+            if len(market_cap) == 0:
+                self._market_cap = pd.DataFrame() # empty
+            else:
+                self._market_cap = pd.concat(market_cap, ignore_index=True)
+                self._market_cap["date"] = pd.to_datetime(self._market_cap ["date"])
+                self._market_cap = self._market_cap[["symbol","date","marketCap"]]
+
         return self._market_cap
 
 
@@ -170,22 +202,21 @@ class StockFPM(Stock):
         self.cash_flow(dense=True).to_csv(file_path, index=False)
 
         # Market cap
+        '''
         file_path = os.path.join(symbol_dir, "market_cap.csv")
         self.market_cap().to_csv(file_path, index=False)
-
+        '''
 
     def load(self):
         symbol_dir = os.path.join(self.dir_path, self.symbol)
         inc, bs, cf, mc = False, False, False, False
         
-        if not os.path.exists(symbol_dir):
-            raise ValueError("Symbol directory does not exist!")
-
         # Income statement  
         file_path = os.path.join(symbol_dir, "income_statement.csv")
         if os.path.exists(file_path):
             self._income_statement = pd.read_csv(file_path)
             self._income_statement["fiscalDateEnding"] = pd.to_datetime(self._income_statement["fiscalDateEnding"])
+            self._income_statement["fillingDate"] = pd.to_datetime(self._income_statement["fillingDate"])
             inc = True
 
         # Balance sheet 
@@ -193,6 +224,7 @@ class StockFPM(Stock):
         if os.path.exists(file_path):
             self._balance_sheet = pd.read_csv(file_path)
             self._balance_sheet["fiscalDateEnding"] = pd.to_datetime(self._balance_sheet["fiscalDateEnding"])
+            self._balance_sheet["fillingDate"] = pd.to_datetime(self._balance_sheet["fillingDate"])
             bs = True
         
         # Cash flow
@@ -200,13 +232,19 @@ class StockFPM(Stock):
         if os.path.exists(file_path):
             self._cash_flow = pd.read_csv(file_path)
             self._cash_flow["fiscalDateEnding"] = pd.to_datetime(self._cash_flow["fiscalDateEnding"])
+            self._cash_flow["fillingDate"] = pd.to_datetime(self._cash_flow["fillingDate"])
             cf = True
 
         # Market cap
+        '''
         file_path = os.path.join(symbol_dir, "market_cap.csv")
         if os.path.exists(file_path):
             self._market_cap = pd.read_csv(file_path)
             self._market_cap["date"] = pd.to_datetime(self._market_cap["date"])
             mc = True
+        '''
 
         return inc, bs, cf, mc 
+    
+    def __str__(self):
+        return self.symbol
