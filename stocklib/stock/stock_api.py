@@ -44,9 +44,10 @@ class Stock:
                     
         
 
-    def __init__(self, base_url, symbol, apikey, dir_path="stock_data", forbid_fetch=False):
+    def __init__(self, base_url, company_name, symbol, apikey, dir_path="stock_data", forbid_fetch=False):
         ## Basic settings
         self.base_url = base_url
+        self.company_name = company_name
         self.symbol = symbol
         self.apikey = apikey
         self.dir_path = dir_path 

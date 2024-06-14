@@ -55,17 +55,35 @@ class StockMarketFPM:
         return False
     
 
-    def evaluate_companies(self, stock_evaluator:StockEvaluator, output_name=None):
-           
+    def evaluate_companies(self, stock_evaluator:StockEvaluator, output_name=None, companies=None, exchanges=None):  
+        """ Iterates through a bunch of companies, evaluating them (which means calculating a bunch of properties
+        that are useful, including a score).
+
+        Args:
+            stock_evaluator (StockEvaluator): Outputs a score and info about each stock
+            output_name (string, optional): data frame name to be saved. Defaults to None.
+            companies (dataframe, optional): dataframe with (symbol, name, exchange and exchangeShortName) to evaluate. Defaults to None.
+            exchanges (list, optional): exchanges to consider. Defaults to None.
+
+        Returns:
+            dataframe with (symbol, name, exchange, exchangeShortName, score, *other metrics)
+        """
         if output_name is None:
             today_date = datetime.now().strftime("%Y-%m-%d")
             output_name = f"{str(stock_evaluator)}_{today_date}.csv"
         
-        companies = self.stock_list()
+        if companies is None:
+            companies = self.stock_list()
+
+        if exchanges is not None:
+            companies = companies[companies["exchangeShortName"].isin(exchanges)]
+        companies = companies[["symbol","name","exchange","exchangeShortName"]]
+        
         # Initialize an empty DataFrame for appending data
         company_evaluations = pd.DataFrame()
         for i in range(len(companies)):
-            symbol, name, exchange = companies.iloc[i][["symbol","name","exchange"]]
+            symbol, name, exchange, exchangeShortName = companies.iloc[i]
+
             stock = StockFPM(symbol)
             score, info = stock_evaluator.evaluate(stock)
             
@@ -73,12 +91,17 @@ class StockMarketFPM:
                 'symbol': symbol,
                 'name': name,
                 'exchange': exchange,
+                'exchangeShortName':exchangeShortName,
                 'score': score,
                 **info
             }
 
             # Append the entry to the DataFrame
             company_evaluations = company_evaluations.append(entry, ignore_index=True)
+
+            if company_evaluations.shape[0] % 5 == 0: # Regular saves
+                # Save the DataFrame to a CSV file
+                company_evaluations.to_csv(output_name, index=False)
 
         # Save the DataFrame to a CSV file
         company_evaluations.to_csv(output_name, index=False)
