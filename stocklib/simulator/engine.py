@@ -248,7 +248,7 @@ class SimulationResult:
         return self.total_sold + self.total_dividends
     
     @property
-    def dividends(self): #!!! TO BE ADAPTED
+    def dividends(self): 
         if self.end_simulation is False:
             raise ValueError("End simulation first")
         _dividends = []
@@ -259,11 +259,6 @@ class SimulationResult:
         for i in range(len(sells)):
             b, s = sold_buys.iloc[i], sells.iloc[i]
             dividend_condition = (dividends["date"] < s["date"]) & (dividends["date"] >= b["date"])
-            dividend_sum = dividends[dividend_condition]["value"].sum()
-            _dividends.append((s["date"],dividend_sum))
-
-        if len(sells) < len(buys):
-            dividend_condition = (dividends["date"] > buys.iloc[-1]["date"])
             dividend_sum = dividends[dividend_condition]["value"].sum()
             _dividends.append((s["date"],dividend_sum))
 
@@ -307,7 +302,7 @@ class SimulationResult:
             metric_df = self.buy_df[self.buy_df["metric"] == metric].copy()
             metric_df.drop(columns=["metric"], inplace=True)
             metric_df.rename(columns={'value': metric}, inplace=True)
-            buys = buys.merge(metric_df)
+            buys = buys.merge(metric_df, how="left")
         buys.drop(columns=["metric"], inplace=True)
         buys.rename(columns={'value': 'market_cap'}, inplace=True)
         
@@ -317,12 +312,12 @@ class SimulationResult:
             metric_df = self.sell_df[self.sell_df["metric"] == metric].copy()
             metric_df.drop(columns=["metric"], inplace=True)
             metric_df.rename(columns={'value': metric}, inplace=True)
-            sells = sells.merge(metric_df)
+            sells = sells.merge(metric_df, how="left")
         sells.drop(columns=["metric"], inplace=True)
         sells.rename(columns={'value': 'market_cap'}, inplace=True)
 
-        if sells.empty:
-            return
+        #if sells.empty:
+        #   return
 
         sells = sells.merge(self.dividends).merge(self.returns)
 
@@ -330,7 +325,7 @@ class SimulationResult:
         sells["market_cap"] /= 10**6
         sells["dividend"] /= 10**6
 
-        if len(buys) != len(sells):
+        if len(buys) != len(sells) and False: #! Disabled
             last_market_cap = self.df[self.df["operation"] == "marketCap"].iloc[-1]
             hypothetical_years = (last_market_cap["date"] - buys.iloc[-1]["date"]).days / 365
             if hypothetical_years == 0:
@@ -358,7 +353,7 @@ class SimulationResult:
             print(sells, end="\n")
             print("[Average_return]: " + str(self.average_return))
 
-            if hypothetical:
+            if hypothetical and False: #! Disabled
                 returns = self.returns
                 if hypothetical_years == 0:
                     count = 0

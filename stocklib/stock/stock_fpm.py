@@ -4,6 +4,7 @@ import requests
 import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from .currency_converter import CurrencyConverter
 
 #! TODO check that everything is in dollars
 def find_common(a, b, c):
@@ -19,13 +20,17 @@ class StockFPM(Stock):
         STOCK API for the "Financial Modeling Prep" API
     """
     def __init__(self, company_name, symbol, apikey="Sek7iGkE1GvNjfD4mxMrAIdJCu8tpeIh", dir_path="stock_data", forbid_fetch=False, correct=True):
+        if type(company_name) != str or type(symbol) != str:
+            raise ValueError("STOCKFPM company name or symbol inputs are not of type string")
+        
         base_url = f'https://financialmodelingprep.com/api/v3/'
         self.forbid_fetch = forbid_fetch
         super().__init__(base_url, company_name, symbol, apikey, dir_path)
         self._maximum_date = None
         self._minimum_date = None
-      
         self._is_open = False  
+        self.currency_converter = CurrencyConverter()
+        self.original_currency = None
 
     
     # IO and Basic operations
@@ -58,8 +63,8 @@ class StockFPM(Stock):
         if not self._is_open:
             
             self._set_income_statement()
-            self._set_cash_flow()
             self._set_balance_sheet()
+            self._set_cash_flow()
 
             if self._income_statement.empty or self._balance_sheet.empty or self._cash_flow.empty:
                 raise ValueError("Can't retrieve statements")
@@ -204,13 +209,24 @@ class StockFPM(Stock):
             self._income_statement = self._income_statement.rename(columns={"date": "fiscalDateEnding", "grossProfit": "grossMargin",
                                                                             "weightedAverageShsOut": "weightedAverageSharesOut",
                                                                             "weightedAverageShsOutDil": "weightedAverageSharesOutDil"})
+           
             for field in self._income_statement.keys()[3:]:
-                self._income_statement[field]  = pd.to_numeric(self._income_statement[field], errors='coerce')
+                self._income_statement[field] = pd.to_numeric(self._income_statement[field], errors='coerce')
 
             self._income_statement['fiscalDateEnding'] = pd.to_datetime(self._income_statement['fiscalDateEnding'], errors='coerce')
             self._income_statement['fillingDate'] = pd.to_datetime(self._income_statement['fillingDate'], errors='coerce')
             self._income_statement = self._income_statement.sort_values("fiscalDateEnding", ascending=False)
-  
+
+            """
+            for i in range(len(self._income_statement)):
+                _income_entry = self._income_statement.iloc[i]
+                assert self.original_currency is None or self.original_currency == _income_entry["reportedCurrency"]
+                self.original_currency = _income_entry["reportedCurrency"]
+                fiscal_date_ending = _income_entry["fiscalDateEnding"]
+                rate = self.currency_converter.to_usd(self.original_currency, fiscal_date_ending)
+                self._income_statement.iloc[i, 3:] = (_income_entry[3:] * rate).astype(int)
+                self._income_statement.loc[i, "reportedCurrency"] = "USD"
+            """
 
     def _set_balance_sheet(self):
         """ Balance sheet statements """
@@ -244,6 +260,15 @@ class StockFPM(Stock):
             self._balance_sheet['fillingDate'] = pd.to_datetime(self._balance_sheet['fillingDate'], errors='coerce')
             self._balance_sheet = self._balance_sheet.sort_values("fiscalDateEnding", ascending=False)
      
+            """
+            for i in range(len(self._balance_sheet)):
+                _balance_entry = self._balance_sheet.iloc[i]
+                self.original_currency = _balance_entry["reportedCurrency"]
+                fiscal_date_ending = _balance_entry["fiscalDateEnding"]
+                rate = self.currency_converter.to_usd(self.original_currency, fiscal_date_ending)
+                self._balance_sheet.iloc[i, 3:] = (_balance_entry[3:] * rate).astype(int)
+                self._balance_sheet.loc[i, "reportedCurrency"] = "USD"
+            """
 
     def _set_cash_flow(self):
         """ Cash flow statements """
@@ -277,6 +302,15 @@ class StockFPM(Stock):
             self._cash_flow['fillingDate'] = pd.to_datetime(self._cash_flow['fillingDate'], errors='coerce')
             self._cash_flow = self._cash_flow.sort_values("fiscalDateEnding", ascending=False)
 
+            """
+            for i in range(len(self._cash_flow)):
+                _cash_entry = self._cash_flow.iloc[i]
+                self.original_currency = _cash_entry["reportedCurrency"]
+                fiscal_date_ending = _cash_entry["fiscalDateEnding"]
+                rate = self.currency_converter.to_usd(self.original_currency, fiscal_date_ending)
+                self._cash_flow.iloc[i, 3:] = (_cash_entry[3:] * rate).astype(int)
+                self._cash_flow.loc[i, "reportedCurrency"] = "USD"
+            """
 
     def _correct_reports(self):        
         if (self._income_statement.empty or self._balance_sheet.empty or self._cash_flow.empty):
@@ -296,6 +330,11 @@ class StockFPM(Stock):
             raise ValueError("Corrections made the statements empty")
 
 
+    def current_market_cap(self):
+        curr_mc = self.fetch("market-capitalization")
+        curr_mc['date'] = pd.to_datetime(curr_mc['date'], errors='coerce')
+        return curr_mc
+    
 
     def market_cap(self, start_date=None, end_date=None):
         """ Market cap over time """
@@ -337,6 +376,7 @@ class StockFPM(Stock):
             market_cap = market_cap[["symbol","date","marketCap"]]
 
         return market_cap
+
 
 
     def __str__(self):

@@ -34,7 +34,7 @@ Tiago Oliveira
 
 from stocklib.simulator import Engine
 from stocklib.stock import StockFPM, StockMarketFPM
-from stocklib.strategy import EarningsStrategy, DebtEarningsStrategy
+from stocklib.strategy import *
 import argparse
     
 class CompanyCriteria:
@@ -51,48 +51,52 @@ class CompanyCriteria:
         cash_flow = stock.cash_flow()
         if income.empty or cash_flow.empty:
             raise ValueError("Income or cash flow is empty")
-        self._check_currency(stock)
+        #!self._check_currency(stock)
         self._check_years(stock)
         
     def _check_currency(self, stock):
         currency = stock.income_statement().iloc[-1]["reportedCurrency"]
-        if  currency not in ["USD","EUR"]:
+        if  currency not in ["USD"]:
             raise ValueError("CompanyCriteria::_check_currency: " + str(stock) + " is in currency " + currency)
 
     def _check_years(self, stock):
         years = len(stock.income_statement())
-        if not years > self.minimum_years:
+        if years < self.minimum_years:
             raise ValueError("CompanyCriteria::_check_years: it only has " + str(years) + " years")
 
 
 
 
-def run_stock_simulation(N, minimum_years, exchanges, pe_to_buy, pe_to_sell, asset_to_liability_ratio):
+def main(args):
     companies = StockMarketFPM().stock_list()
-    companies = companies[companies["exchangeShortName"].isin(exchanges)]
-    company_criteria = CompanyCriteria(minimum_years, currencies=["USD","EUR"])
+    companies = companies[companies["exchangeShortName"].isin(args.exchanges)]
+    company_criteria = CompanyCriteria(args.minimum_years, currencies=["USD","EUR"])
     
-    n = 0
     avg_returns = []
-    while n < N:
+    while len(avg_returns) < args.N:
         try:
             company = companies.sample(n=1).iloc[0]
             stock = StockFPM(company["name"], company["symbol"])
             stock.open()
             company_criteria.check(stock)
             
-            engine = Engine(DebtEarningsStrategy(pe_to_buy=pe_to_buy, pe_to_sell=pe_to_sell, asset_to_liability_ratio=asset_to_liability_ratio), stock)
+            engine = Engine(LiabilitiesStrategy(years_to_average=args.years_to_avg,
+                                                pe_to_buy=args.pe_to_buy,
+                                                pe_to_sell=args.pe_to_sell,
+                                                curr_al_ratio=args.curr_asset_liab_ratio,
+                                                noncurr_al_ratio=args.noncurr_asset_liab_ratio), stock)
             simulation = engine.simulate()
-
+                         
             if len(simulation.returns) > 0:
                 avg_returns.append(simulation.returns["return"].mean())
             
-            simulation.print(buy_metrics=["current-liabilities-assets-ratio"])
-            n += 1
+            print("[Echange] " + company["exchange"])
+            simulation.print(buy_metrics=["eps_"+str(args.years_to_avg),"curr-asset-liab-ratio", "asset-liab-ratio"],
+                             sell_metrics=["eps_"+str(args.years_to_avg)])
 
         except Exception as e:
-            #print(e)
-            pass
+            print(e)
+            #pass
 
     return avg_returns
 
@@ -102,14 +106,16 @@ if __name__ == "__main__":
     parser.add_argument('--N', type=int, default=100, help='Number of companies to simulate')
     parser.add_argument('--minimum_years', type=int, default=10, help='Minimum number of years in business for a company')
     parser.add_argument('--exchanges', type=str, nargs='+', default=["NYSE", "NASDAQ"], help='List of stock exchanges to include')
+    parser.add_argument('--years_to_avg', type=int, default=5, help='Years to average earnings')
     parser.add_argument('--pe_to_buy', type=float, default=10.0, help='P/E ratio threshold to buy')
     parser.add_argument('--pe_to_sell', type=float, default=20.0, help='P/E ratio threshold to sell')
-    parser.add_argument('--asset_liability_ratio', type=float, default=2.0, help='Minimum asset to liability ratio')
+    parser.add_argument('--curr_asset_liab_ratio', type=float, default=1.0, help='Minimum asset to liability ratio')
+    parser.add_argument('--noncurr_asset_liab_ratio', type=float, default=1.0, help='Minimum asset to liability ratio')
+
 
     args = parser.parse_args()
 
-    avg_returns = run_stock_simulation(args.N, args.minimum_years, args.exchanges, \
-                                       args.pe_to_buy, args.pe_to_sell, args.asset_liability_ratio)
+    avg_returns = main(args)
     avg_return = sum(avg_returns) / len(avg_returns) if avg_returns else 0
     print(f"Average Return: {avg_return:.2f}%")
 

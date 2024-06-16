@@ -1,0 +1,8 @@
+# Ignore all CSV files
+*.csv
+
+# Ignore Python bytecode directories
+__pycache__/
+
+# stocklib
+stocklib/.garbage
